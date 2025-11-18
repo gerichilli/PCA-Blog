@@ -1,33 +1,75 @@
 # classification.py
-from sklearn.linear_model import LogisticRegression
-from sklearn.model_selection import train_test_split
+import numpy as np
+import warnings
+from sklearn.linear_model import LogisticRegressionCV
 from sklearn.metrics import accuracy_score
+from sklearn.model_selection import StratifiedKFold, train_test_split
 from pca_reduction import run_pca
 
-def train_model():
-    X_pca, y, pca, scaler = run_pca()
+np.seterr(divide="ignore", invalid="ignore", over="ignore")
 
-    # TRAINING
-    # Split the PCA features and labels into train and test sets
-    # 80% for training, 20% for testing
+def train_model(test_size=0.2, random_state=42, n_components=100):
+    """
+    Train a logistic regression model on PCA reduced features.
+
+    Parameters
+    ----------
+    test_size : float
+        Fraction of the dataset to hold out for evaluation.
+    random_state : int
+        Seed for reproducibility.
+    n_components : int
+        Number of PCA components to retain.
+
+    Returns
+    -------
+    model : sklearn.linear_model.LogisticRegressionCV
+        Trained classifier.
+    pca : sklearn.decomposition.PCA
+        Fitted PCA transformer.
+    scaler : sklearn.preprocessing.StandardScaler
+        Fitted scaler.
+    feature_scaler : sklearn.preprocessing.StandardScaler
+        Scaler applied after PCA so inference matches training.
+    metrics : dict
+        Dictionary containing evaluation metadata.
+    """
+
+    X_pca, y, pca, scaler, feature_scaler = run_pca(n_components=n_components)
+
     X_train, X_test, y_train, y_test = train_test_split(
-        X_pca, y, test_size=0.2, random_state=42
+        X_pca, y, test_size=test_size, stratify=y, random_state=random_state
     )
 
-    # Initialize Logistic Regression classifier
-    # max_iter is set high enough to make sure the model converges
-    model = LogisticRegression(max_iter=2000)
+    # Cross-validated logistic regression improves generalization accuracy
+    cv = StratifiedKFold(n_splits=5, shuffle=True, random_state=random_state)
+    model = LogisticRegressionCV(
+        Cs=np.logspace(-2, 2, 9),
+        cv=cv,
+        max_iter=2000,
+        scoring="accuracy",
+        n_jobs=1,
+        refit=True,
+        solver="liblinear",
+    )
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", RuntimeWarning)
+        with np.errstate(divide="ignore", invalid="ignore", over="ignore"):
+            model.fit(X_train, y_train)
 
-    # Train the model on the PCA-transformed training data
-    model.fit(X_train, y_train)
-
-    # Predict labels for the test set
     y_pred = model.predict(X_test)
-
-    # Compute classification accuracy
     acc = accuracy_score(y_test, y_pred)
 
-    print("Accuracy:", acc) # Accuracy: 0.6640926640926641
+    metrics = {
+        "test_accuracy": acc,
+        "train_size": len(X_train),
+        "test_size": len(X_test),
+        "best_C": float(model.C_[0]),
+    }
 
-    return model, pca, scaler
+    print(
+        f"Test accuracy: {acc:.4f} "
+        f"(train={len(X_train)} samples, test={len(X_test)} samples, best C={model.C_[0]:.4f})"
+    )
 
+    return model, pca, scaler, feature_scaler, metrics

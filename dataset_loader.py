@@ -1,14 +1,14 @@
 # dataset_loader.py
 import os
 import numpy as np # Handle matric, flatten
-from PIL import Image # Open images, turn to grayscale, resize
+from PIL import Image # Open images, convert to RGB, resize
 
 def load_images(folder, label):
     """
     1. Load images from a given folder
-    2. Convert them to grayscale,
+    2. Convert them to RGB (giữ nguyên thông tin màu),
     3. Resize them to 64×64
-    4. Flatten them into 1D vectors (4096 dimensions),
+    4. Normalize to [0, 1] and flatten to 1D vectors (64×64×3 = 12,288 dimensions),
     5. Return both the processed images and their corresponding labels (0 for green_apple, 1 for red_apple) red_apple).
 
     Parameters
@@ -22,8 +22,8 @@ def load_images(folder, label):
     Returns
     -------
     images : numpy.ndarray
-        Array of shape (N, 4096), where N is the number of images.
-        Each row represents one flattened grayscale image.
+        Array of shape (N, 12288), where N is the number of images.
+        Each row represents one flattened RGB image.
     labels : numpy.ndarray
         Array of shape (N,), containing the label for each image.
     """
@@ -32,13 +32,20 @@ def load_images(folder, label):
 
     # Iterate through all files in the folder
     for filename in os.listdir(folder):
+        if filename.startswith("."):
+            continue
+
+        if not filename.lower().endswith((".jpg", ".jpeg", ".png", ".bmp")):
+            continue
+
         path = os.path.join(folder, filename)
 
-        # Open the image, convert to grayscale, and resize to 64×64
-        img = Image.open(path).convert("L").resize((64, 64))
+        # Open the image, convert to RGB, and resize to 64×64
+        img = Image.open(path).convert("RGB").resize((64, 64))
 
-        # Convert to NumPy array and flatten to a 4096-dimensional vector
-        images.append(np.array(img).flatten())
+        # Convert to float32 NumPy array in [0, 1] and flatten
+        arr = np.array(img, dtype=np.float32) / 255.0
+        images.append(arr.flatten())
 
         # Append the label for this image
         labels.append(label)

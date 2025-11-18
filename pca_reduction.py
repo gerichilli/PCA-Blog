@@ -1,13 +1,14 @@
 # pca_reduction.py
 import numpy as np
+import warnings
 from sklearn.decomposition import PCA
 from sklearn.preprocessing import StandardScaler
 from dataset_loader import load_images
 
-def run_pca():
+def run_pca(n_components=100):
     """
-    Load green_apple and red_apple images, combine them into a single dataset,
-    apply PCA to reduce dimensionality from 4096 to 100 components,
+    Load green_apple and red_apple images, combine them into a single RGB dataset,
+    apply PCA to reduce dimensionality from 12,288 to configurable components,
     and return the transformed data along with their labels and the PCA model.
 
     Returns
@@ -19,7 +20,9 @@ def run_pca():
     pca : sklearn.decomposition.PCA
         The trained PCA transformer.
     scaler : sklearn.preprocessing.StandardScaler
-        Fitted scaler from training step
+        Fitted scaler from training step.
+    feature_scaler : sklearn.preprocessing.StandardScaler
+        Scaler applied after PCA to keep features well conditioned.
     """
 
     # Load preprocessed green_apple images (label = 0)
@@ -32,19 +35,29 @@ def run_pca():
     y = np.hstack([y_green_apples, y_red_apples])
 
     # Scale before PCA
-    scaler = StandardScaler()
+    scaler = StandardScaler(with_mean=True, with_std=False)
     X_scaled = scaler.fit_transform(X)
+    X_scaled = X_scaled.astype(np.float64, copy=False)
 
-    # Create PCA with 100 components
-    pca = PCA(n_components=100, random_state=42)
+    # Create PCA with configurable number of components
+    pca = PCA(
+        n_components=n_components,
+        random_state=42,
+        svd_solver="full",
+        whiten=False,
+    )
 
     # Fit PCA on X and transform it
-    X_pca = pca.fit_transform(X_scaled)
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", RuntimeWarning)
+        with np.errstate(divide="ignore", invalid="ignore", over="ignore"):
+            X_pca = pca.fit_transform(X_scaled)
 
-    print("Original shape:", X.shape)    # (6472, 4096)
-    print("After PCA:", X_pca.shape)     # (6472, 100)
+    # Scale PCA features to keep them well conditioned for linear models
+    feature_scaler = StandardScaler()
+    X_pca_scaled = feature_scaler.fit_transform(X_pca)
 
-    return X_pca, y, pca, scaler
+    print("Original shape:", X.shape)
+    print("After PCA:", X_pca.shape)
 
-
-run_pca()
+    return X_pca_scaled, y, pca, scaler, feature_scaler
